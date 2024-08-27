@@ -1,0 +1,8 @@
+requests
+python-dotenv
+openai
+fastapi
+uvicorn
+websockets
+typing-extensions
+fastapi[all]

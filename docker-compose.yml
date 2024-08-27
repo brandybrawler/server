@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  mzee-ai:
+    container_name: MzeeAi
+    build: .
+    ports:
+      - "6969:6969"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
