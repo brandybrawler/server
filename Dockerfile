@@ -17,7 +17,7 @@ COPY . .
 EXPOSE 6969
 
 # Define environment variable
-ENV FLASK_APP=new.py
+ENV FASTAPI_APP=new.py
 
-# Run the Flask application
-CMD ["flask", "run", "--host=0.0.0.0", "--port=6969"]
+# Run the FastAPI application using uvicorn
+CMD ["uvicorn", "new:app", "--host", "0.0.0.0", "--port", "6969"]
