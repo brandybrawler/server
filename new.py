@@ -39,11 +39,8 @@ app.add_middleware(
 # Define the CHUNK_SIZE constant used for streaming data
 CHUNK_SIZE = 1024
 
-# Improved function to remove special characters and control characters like newlines
+# Function to remove special characters and control characters like newlines
 def filter_response(text):
-    # Define regex pattern to remove special characters and newlines
-    text = text.replace('"', '\\"')  # Escape double quotes
-    text = text.replace("'", "\\'")  # Escape single quotes
     text = re.sub(r'[\x00-\x1F]+', ' ', text)  # Remove control characters
     return text
 
