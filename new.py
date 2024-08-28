@@ -107,15 +107,15 @@ class AssistantManager:
             name = "Farm Expert" if assistant_type == "farmer" else "Beekeeper Expert"
             instructions = (
                 "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
-                "Do not use special characters in your responses."
-                "Be casual with your responses and let your responses be short." if assistant_type == "farmer"
+                "Be casual with your responses, keep them short, and do not use special characters (like newline, tab, etc.)." 
+                if assistant_type == "farmer"
                 else "You are an expert beekeeper with vast knowledge on beekeeping and are "
-                     "willing to share it with others. Be casual with your responses and let your responses be short."
-                     "Do not use special characters in your responses."
+                     "willing to share it with others. Be casual with your responses, keep them short, "
+                     "and do not use special characters (like newline, tab, etc.)."
             )
 
             assistant_id = await self.create_assistant(name, instructions)
-            if self.vector_store_ids[assistant_type] is None:
+            if self.vector_store_ids.get(assistant_type) is None:
                 vector_store_id = await self.create_vector_store(assistant_type)
             else:
                 vector_store_id = self.vector_store_ids[assistant_type]
@@ -199,7 +199,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         thread_id=thread_id
                     )
                     formatted_messages = assistant_manager.format_messages(messages.data)
-                    logging.debug(f"Total audio bytes length: {len(formatted_messages)}")
+                    logging.debug(f"Formatted messages: {formatted_messages}")
                     await manager.send_text(websocket, json.dumps({'success': True, 'response': formatted_messages}))
                 else:
                     await manager.send_text(websocket, json.dumps({'success': False, 'error': f"Run did not complete successfully: {run.status}"}))
