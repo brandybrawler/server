@@ -59,7 +59,8 @@ class AssistantManager:
         with open("vector_store_ids.json", "w") as file:
             json.dump(self.vector_store_ids, file)
 
-    async def create_assistant(self, name, instructions):
+    async def create_assistant(self, assistant_type, name, instructions):
+        """Create an assistant with specific instructions."""
         try:
             assistant = await asyncio.to_thread(
                 client.beta.assistants.create,
@@ -111,17 +112,26 @@ class AssistantManager:
             logging.error(f"Failed to update assistant with vector store: {str(e)}")
 
     async def ensure_assistant_and_thread(self, assistant_type):
+        """Ensure the assistant and thread exist for the given assistant type."""
         if assistant_type not in self.assistants:
-            name = "Farm Expert" if assistant_type == "farmer" else "Beekeeper Expert"
-            instructions = (
-                "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
-                "Be casual with your responses and let your responses be short." if assistant_type == "farmer"
-                else "You are an expert beekeeper with vast knowledge on beekeeping and are "
-                     "willing to share it with others. Be casual with your responses and let your responses be short."
-            )
-
-            assistant_id = await self.create_assistant(name, instructions)
-            if self.vector_store_ids[assistant_type] is None:
+            if assistant_type == "farmer":
+                name = "Farm Expert"
+                instructions = (
+                    "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
+                    "Be casual with your responses and let your responses be short."
+                )
+            elif assistant_type == "beekeeper":
+                name = "Beekeeper Expert"
+                instructions = (
+                    "You are an expert beekeeper with vast knowledge on beekeeping and are willing to share it with others. "
+                    "Be casual with your responses and let your responses be short."
+                )
+            else:
+                logging.error(f"Unknown assistant type: {assistant_type}")
+                return None
+            
+            assistant_id = await self.create_assistant(assistant_type, name, instructions)
+            if self.vector_store_ids.get(assistant_type) is None:
                 vector_store_id = await self.create_vector_store(assistant_type)
             else:
                 vector_store_id = self.vector_store_ids[assistant_type]
