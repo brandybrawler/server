@@ -34,6 +34,14 @@ app.add_middleware(
 # Define the CHUNK_SIZE constant used for streaming data
 CHUNK_SIZE = 1024
 
+# Function to remove special characters like ** and others
+def filter_response(text):
+    # Define characters and patterns to remove
+    special_chars = ["**", "*", "_", "~", "`"]
+    for char in special_chars:
+        text = text.replace(char, "")
+    return text
+
 class AssistantManager:
     """Manages assistants and their vector stores."""
 
@@ -107,15 +115,13 @@ class AssistantManager:
             name = "Farm Expert" if assistant_type == "farmer" else "Beekeeper Expert"
             instructions = (
                 "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
-                "Be casual with your responses, keep them short, and do not use special characters (like newline, tab, etc.)." 
-                if assistant_type == "farmer"
+                "Be casual with your responses and let your responses be short." if assistant_type == "farmer"
                 else "You are an expert beekeeper with vast knowledge on beekeeping and are "
-                     "willing to share it with others. Be casual with your responses, keep them short, "
-                     "and do not use special characters (like newline, tab, etc.)."
+                     "willing to share it with others. Be casual with your responses and let your responses be short."
             )
 
             assistant_id = await self.create_assistant(name, instructions)
-            if self.vector_store_ids.get(assistant_type) is None:
+            if self.vector_store_ids[assistant_type] is None:
                 vector_store_id = await self.create_vector_store(assistant_type)
             else:
                 vector_store_id = self.vector_store_ids[assistant_type]
@@ -133,7 +139,7 @@ class AssistantManager:
         formatted = []
         for message in messages:
             role = message.role
-            text = message.content[0].text.value
+            text = filter_response(message.content[0].text.value)  # Filter response text
             formatted.append({"role": role, "text": text})
         return formatted
 
@@ -167,14 +173,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            logging.debug(f"Received WebSocket message: {data}")
-            try:
-                parsed_data = json.loads(data)
-                user_prompt = parsed_data['prompt']
-            except json.JSONDecodeError as e:
-                logging.error(f"JSON decode error: {e}")
-                await websocket.send_json({'success': False, 'error': f"Invalid JSON received: {e}"})
-                continue
+            user_prompt = json.loads(data)['prompt']
             
             assistant_info = await assistant_manager.ensure_assistant_and_thread(assistant_type)
             assistant_id, thread_id = assistant_info['assistant_id'], assistant_info['thread_id']
@@ -220,7 +219,6 @@ async def websocket_audio(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
-            logging.debug(f"Received audio WebSocket message: {data}")
             assistant_type = data.get('type')
             response_text = data.get('response')
 
@@ -235,7 +233,7 @@ async def websocket_audio(websocket: WebSocket):
             }
 
             payload = {
-                "text": response_text,
+                "text": filter_response(response_text),  # Filter response text
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
                     "stability": 0.5,
