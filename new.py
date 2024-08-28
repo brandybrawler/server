@@ -107,9 +107,11 @@ class AssistantManager:
             name = "Farm Expert" if assistant_type == "farmer" else "Beekeeper Expert"
             instructions = (
                 "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
+                "Do not use special characters in your responses."
                 "Be casual with your responses and let your responses be short." if assistant_type == "farmer"
                 else "You are an expert beekeeper with vast knowledge on beekeeping and are "
                      "willing to share it with others. Be casual with your responses and let your responses be short."
+                     "Do not use special characters in your responses."
             )
 
             assistant_id = await self.create_assistant(name, instructions)
