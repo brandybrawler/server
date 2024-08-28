@@ -165,7 +165,14 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            user_prompt = json.loads(data)['prompt']
+            logging.debug(f"Received WebSocket message: {data}")
+            try:
+                parsed_data = json.loads(data)
+                user_prompt = parsed_data['prompt']
+            except json.JSONDecodeError as e:
+                logging.error(f"JSON decode error: {e}")
+                await websocket.send_json({'success': False, 'error': f"Invalid JSON received: {e}"})
+                continue
             
             assistant_info = await assistant_manager.ensure_assistant_and_thread(assistant_type)
             assistant_id, thread_id = assistant_info['assistant_id'], assistant_info['thread_id']
@@ -211,6 +218,7 @@ async def websocket_audio(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
+            logging.debug(f"Received audio WebSocket message: {data}")
             assistant_type = data.get('type')
             response_text = data.get('response')
 
