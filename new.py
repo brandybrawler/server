@@ -38,9 +38,10 @@ CHUNK_SIZE = 1024
 # Improved function to remove special characters and control characters like newlines
 def filter_response(text):
     # Define regex pattern to remove special characters and newlines
-    pattern = re.compile(r'[\x00-\x1F]+')
-    clean_text = re.sub(pattern, ' ', text)  # Replace with a space
-    return clean_text
+    text = text.replace('"', '\\"')  # Escape double quotes
+    text = text.replace("'", "\\'")  # Escape single quotes
+    text = re.sub(r'[\x00-\x1F]+', ' ', text)  # Remove control characters
+    return text
 
 class AssistantManager:
     """Manages assistants and their vector stores."""
