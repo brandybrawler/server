@@ -3,12 +3,11 @@ import json
 import asyncio
 import logging
 import re
-from io import BytesIO
 from dotenv import load_dotenv
 from openai import OpenAI
-from elevenlabs import VoiceSettings, ElevenLabs
+from elevenlabs import VoiceSettings
+from elevenlabs.client import ElevenLabs
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 
@@ -36,9 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Define the CHUNK_SIZE constant used for streaming data
-CHUNK_SIZE = 1024
 
 # Function to remove special characters and control characters like newlines
 def filter_response(text):
