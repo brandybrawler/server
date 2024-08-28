@@ -3,6 +3,7 @@ import json
 import asyncio
 import requests
 import logging
+import re
 from io import BytesIO
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -34,13 +35,12 @@ app.add_middleware(
 # Define the CHUNK_SIZE constant used for streaming data
 CHUNK_SIZE = 1024
 
-# Function to remove special characters like ** and others
+# Improved function to remove special characters and control characters like newlines
 def filter_response(text):
-    # Define characters and patterns to remove
-    special_chars = ["**", "*", "_", "~", "`"]
-    for char in special_chars:
-        text = text.replace(char, "")
-    return text
+    # Define regex pattern to remove special characters and newlines
+    pattern = re.compile(r'[\x00-\x1F]+')
+    clean_text = re.sub(pattern, ' ', text)  # Replace with a space
+    return clean_text
 
 class AssistantManager:
     """Manages assistants and their vector stores."""
