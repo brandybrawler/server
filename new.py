@@ -21,9 +21,11 @@ API_KEY = os.getenv("ELEVENLABS_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
 
-# Fetch vector store IDs from environment variables
+# Fetch vector store and assistant IDs from environment variables
 FARMER_VECTOR_STORE_ID = os.getenv("FARMER_VECTOR_STORE_ID")
 BEEKEEPER_VECTOR_STORE_ID = os.getenv("BEEKEEPER_VECTOR_STORE_ID")
+FARMER_ASSISTANT_ID = os.getenv("FARMER_ASSISTANT_ID")
+BEEKEEPER_ASSISTANT_ID = os.getenv("BEEKEEPER_ASSISTANT_ID")
 
 app = FastAPI()
 logging.basicConfig(level=logging.DEBUG)
@@ -48,24 +50,14 @@ class AssistantManager:
     """Manages assistants and their vector stores."""
 
     def __init__(self):
-        self.assistants = {}
+        self.assistants = {
+            "farmer": {"assistant_id": FARMER_ASSISTANT_ID, "thread_id": None},
+            "beekeeper": {"assistant_id": BEEKEEPER_ASSISTANT_ID, "thread_id": None}
+        }
 
-    async def create_assistant(self, assistant_type, name, instructions):
-        """Create an assistant with specific instructions."""
-        try:
-            assistant = await asyncio.to_thread(
-                client.beta.assistants.create,
-                name=name,
-                instructions=instructions,
-                tools=[{"type": "file_search"}],
-                model="gpt-4o",
-            )
-            return assistant.id
-        except Exception as e:
-            logging.error(f"Failed to create assistant: {str(e)}")
-            return None
-
-    async def update_assistant_with_vector_store(self, assistant_id, vector_store_id):
+    async def update_assistant_with_vector_store(self, assistant_type, vector_store_id):
+        assistant_id = self.assistants[assistant_type]["assistant_id"]
+        logging.debug(f"Updating assistant {assistant_id} with vector store {vector_store_id}")
         try:
             await asyncio.to_thread(
                 client.beta.assistants.update,
@@ -77,33 +69,24 @@ class AssistantManager:
 
     async def ensure_assistant_and_thread(self, assistant_type):
         """Ensure the assistant and thread exist for the given assistant type."""
-        if assistant_type not in self.assistants:
-            if assistant_type == "farmer":
-                name = "Farm Expert"
-                instructions = (
-                    "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
-                    "Be casual with your responses and let your responses be short."
-                )
-                vector_store_id = FARMER_VECTOR_STORE_ID
-            elif assistant_type == "beekeeper":
-                name = "Beekeeper Expert"
-                instructions = (
-                    "You are an expert beekeeper with vast knowledge on beekeeping and are willing to share it with others. "
-                    "Be casual with your responses and let your responses be short."
-                )
-                vector_store_id = BEEKEEPER_VECTOR_STORE_ID
-            else:
-                logging.error(f"Unknown assistant type: {assistant_type}")
-                return None
-            
-            assistant_id = await self.create_assistant(assistant_type, name, instructions)
-            await self.update_assistant_with_vector_store(assistant_id, vector_store_id)
+        if assistant_type == "farmer":
+            vector_store_id = FARMER_VECTOR_STORE_ID
+        elif assistant_type == "beekeeper":
+            vector_store_id = BEEKEEPER_VECTOR_STORE_ID
+        else:
+            logging.error(f"Unknown assistant type: {assistant_type}")
+            return None
+        
+        assistant_id = self.assistants[assistant_type]["assistant_id"]
+        if assistant_id:
+            await self.update_assistant_with_vector_store(assistant_type, vector_store_id)
+        else:
+            logging.error(f"Assistant ID for {assistant_type} is not set in environment variables.")
+            return None
 
-            self.assistants[assistant_type] = {'assistant_id': assistant_id, 'thread_id': None}
-
-        if self.assistants[assistant_type]['thread_id'] is None:
+        if self.assistants[assistant_type]["thread_id"] is None:
             thread = await asyncio.to_thread(client.beta.threads.create)
-            self.assistants[assistant_type]['thread_id'] = thread.id
+            self.assistants[assistant_type]["thread_id"] = thread.id
 
         return self.assistants[assistant_type]
 
@@ -140,14 +123,25 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
-    assistant_type = "farmer"  # or "beekeeper" based on client preference, you can modify this logic
     await manager.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            user_prompt = json.loads(data)['prompt']
+            logging.debug(f"Data received: {data}")
             
+            try:
+                parsed_data = json.loads(data)
+                assistant_type = parsed_data['assistant_type']
+                user_prompt = parsed_data['prompt']
+            except json.JSONDecodeError as e:
+                logging.error(f"JSON decode error: {e}")
+                await websocket.send_json({'success': False, 'error': f"Invalid JSON received: {e}"})
+                continue
+            
+            logging.debug(f"Assistant type: {assistant_type}, User prompt: {user_prompt}")
+
             assistant_info = await assistant_manager.ensure_assistant_and_thread(assistant_type)
+            logging.debug(f"Assistant info: {assistant_info}")
             assistant_id, thread_id = assistant_info['assistant_id'], assistant_info['thread_id']
 
             try:
@@ -176,11 +170,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     await manager.send_text(websocket, json.dumps({'success': False, 'error': f"Run did not complete successfully: {run.status}"}))
 
             except Exception as e:
+                logging.error(f"Error during message handling: {e}")
                 await manager.send_text(websocket, json.dumps({'success': False, 'error': str(e)}))
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
+        logging.error(f"WebSocket error: {e}")
         manager.disconnect(websocket)
         await websocket.close(code=1000, reason=str(e))
 
@@ -191,6 +187,7 @@ async def websocket_audio(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
+            logging.debug(f"Received audio WebSocket message: {data}")
             assistant_type = data.get('type')
             response_text = data.get('response')
 
