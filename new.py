@@ -21,6 +21,10 @@ API_KEY = os.getenv("ELEVENLABS_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
 
+# Fetch vector store IDs from environment variables
+FARMER_VECTOR_STORE_ID = os.getenv("FARMER_VECTOR_STORE_ID")
+BEEKEEPER_VECTOR_STORE_ID = os.getenv("BEEKEEPER_VECTOR_STORE_ID")
+
 app = FastAPI()
 logging.basicConfig(level=logging.DEBUG)
 
@@ -48,17 +52,6 @@ class AssistantManager:
 
     def __init__(self):
         self.assistants = {}
-        self.vector_store_ids = self.load_persistent_vector_store_ids()
-
-    def load_persistent_vector_store_ids(self):
-        if os.path.exists("vector_store_ids.json"):
-            with open("vector_store_ids.json", "r") as file:
-                return json.load(file)
-        return {"farmer": None, "beekeeper": None}
-
-    def save_persistent_vector_store_ids(self):
-        with open("vector_store_ids.json", "w") as file:
-            json.dump(self.vector_store_ids, file)
 
     async def create_assistant(self, assistant_type, name, instructions):
         """Create an assistant with specific instructions."""
@@ -74,33 +67,6 @@ class AssistantManager:
         except Exception as e:
             logging.error(f"Failed to create assistant: {str(e)}")
             return None
-
-    async def create_vector_store(self, assistant_type):
-        folder_path = "Farmer data" if assistant_type == "farmer" else "Beekeeper data"
-        file_paths = [os.path.join(folder_path, file) for file in os.listdir(folder_path) if file.endswith(('.pdf', '.txt', '.md', '.docx'))]
-        file_streams = [open(path, "rb") for path in file_paths]
-
-        try:
-            vector_store = await asyncio.to_thread(
-                client.beta.vector_stores.create,
-                name=f"{assistant_type.capitalize()} Data"
-            )
-            file_batch = await asyncio.to_thread(
-                client.beta.vector_stores.file_batches.upload_and_poll,
-                vector_store_id=vector_store.id,
-                files=file_streams
-            )
-            self.vector_store_ids[assistant_type] = vector_store.id
-            self.save_persistent_vector_store_ids()
-            logging.debug(file_batch.status)
-            logging.debug(file_batch.file_counts)
-            return vector_store.id
-        except Exception as e:
-            logging.error(f"Failed to upload files: {str(e)}")
-            return None
-        finally:
-            for stream in file_streams:
-                stream.close()
 
     async def update_assistant_with_vector_store(self, assistant_id, vector_store_id):
         try:
@@ -121,21 +87,19 @@ class AssistantManager:
                     "You are an old farmer in Kenya with vast knowledge on farming and are willing to share it with others. "
                     "Be casual with your responses and let your responses be short."
                 )
+                vector_store_id = FARMER_VECTOR_STORE_ID
             elif assistant_type == "beekeeper":
                 name = "Beekeeper Expert"
                 instructions = (
                     "You are an expert beekeeper with vast knowledge on beekeeping and are willing to share it with others. "
                     "Be casual with your responses and let your responses be short."
                 )
+                vector_store_id = BEEKEEPER_VECTOR_STORE_ID
             else:
                 logging.error(f"Unknown assistant type: {assistant_type}")
                 return None
             
             assistant_id = await self.create_assistant(assistant_type, name, instructions)
-            if self.vector_store_ids.get(assistant_type) is None:
-                vector_store_id = await self.create_vector_store(assistant_type)
-            else:
-                vector_store_id = self.vector_store_ids[assistant_type]
             await self.update_assistant_with_vector_store(assistant_id, vector_store_id)
 
             self.assistants[assistant_type] = {'assistant_id': assistant_id, 'thread_id': None}
