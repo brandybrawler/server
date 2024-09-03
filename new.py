@@ -11,6 +11,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
+from google.cloud import speech_v1p1beta1 as speech
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -20,6 +22,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 API_KEY = os.getenv("ELEVENLABS_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
+
+# Initialize Google Speech-to-Text client
+speech_client = speech.SpeechClient()
 
 # Fetch vector store and assistant IDs from environment variables
 FARMER_VECTOR_STORE_ID = os.getenv("FARMER_VECTOR_STORE_ID")
@@ -227,6 +232,75 @@ async def websocket_audio(websocket: WebSocket):
         logging.error(f"Exception: {str(e)}")
         await websocket.send_json({'error': str(e)})
 
+@app.websocket("/ws/audio-chat")
+async def websocket_audio_chat(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            audio_data = await websocket.receive_bytes()
+            logging.debug(f"Received audio data of length: {len(audio_data)}")
+            
+            # Configure the Google Speech-to-Text request
+            audio = speech.RecognitionAudio(content=audio_data)
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=16000,
+                language_code="en-US",
+            )
+            
+            # Call the Google Speech-to-Text API
+            try:
+                response = speech_client.recognize(config=config, audio=audio)
+                user_prompt = response.results[0].alternatives[0].transcript
+                logging.debug(f"Transcribed text: {user_prompt}")
+            except Exception as e:
+                logging.error(f"Error transcribing audio: {e}")
+                await websocket.send_json({'success': False, 'error': str(e)})
+                continue
+            
+            # Now handle the transcribed text as we would in the /ws/chat endpoint
+            assistant_type = "farmer"  # Or retrieve this dynamically if needed
+            
+            assistant_info = await assistant_manager.ensure_assistant_and_thread(assistant_type)
+            logging.debug(f"Assistant info: {assistant_info}")
+            assistant_id, thread_id = assistant_info['assistant_id'], assistant_info['thread_id']
+
+            try:
+                await asyncio.to_thread(
+                    client.beta.threads.messages.create,
+                    thread_id=thread_id,
+                    role="user",
+                    content=user_prompt
+                )
+
+                run = await asyncio.to_thread(
+                    client.beta.threads.runs.create_and_poll,
+                    thread_id=thread_id,
+                    assistant_id=assistant_id
+                )
+
+                if run.status == 'completed':
+                    messages = await asyncio.to_thread(
+                        client.beta.threads.messages.list,
+                        thread_id=thread_id
+                    )
+                    formatted_messages = assistant_manager.format_messages(messages.data)
+                    logging.debug(f"Formatted messages: {formatted_messages}")
+                    await manager.send_text(websocket, json.dumps({'success': True, 'response': formatted_messages}))
+                else:
+                    await manager.send_text(websocket, json.dumps({'success': False, 'error': f"Run did not complete successfully: {run.status}"}))
+
+            except Exception as e:
+                logging.error(f"Error during message handling: {e}")
+                await manager.send_text(websocket, json.dumps({'success': False, 'error': str(e)}))
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logging.error(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
+        await websocket.close(code=1000, reason=str(e))
+        
 if __name__ == "__main__":
     import uvicorn
     # Run the FastAPI server
