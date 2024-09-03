@@ -6,3 +6,4 @@ uvicorn
 websockets
 typing-extensions
 fastapi[all]
+google-cloud-speech
