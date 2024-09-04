@@ -46,6 +46,24 @@ def filter_response(text):
     text = re.sub(r'[\x00-\x1F]+', ' ', text)  # Remove control characters
     return text
 
+def chunk_response(text, max_length=100):
+    # Split text into sentences
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    chunks = []
+    current_chunk = ""
+
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) + 1 <= max_length:
+            current_chunk += (sentence + " ")
+        else:
+            chunks.append(current_chunk.strip())
+            current_chunk = sentence + " "
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
+
 class AssistantManager:
     """Manages assistants and their vector stores."""
 
@@ -192,34 +210,40 @@ async def websocket_audio(websocket: WebSocket):
             response_text = data.get('response')
 
             voice_id = "1VeWDjFRlbnYGhhSvihY" if assistant_type == "farmer" else "3giviIRqITyV81sX559A"
-
             url = BASE_URL.replace('<voice-id>', voice_id)
-
             headers = {
                 "Accept": "audio/mpeg",
                 "Content-Type": "application/json",
                 "xi-api-key": API_KEY,
             }
 
-            payload = {
-                "text": filter_response(response_text),  # Filter response text
-                "model_id": "eleven_multilingual_v2",
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.5,
+            # Break the response into smaller chunks
+            chunks = chunk_response(response_text)
+
+            for chunk in chunks:
+                payload = {
+                    "text": filter_response(chunk),  # Filter response text
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.5,
+                    }
                 }
-            }
 
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+                response = requests.post(url, json=payload, headers=headers)
+                response.raise_for_status()
 
-            logging.debug("Audio data received successfully.")
+                logging.debug("Audio data received successfully from ElevenLabs.")
 
-            audio_bytes = response.content
-            logging.debug(f"Audio bytes (first 100 bytes): {audio_bytes[:100]}")
-            logging.debug(f"Total audio bytes length: {len(audio_bytes)}")
+                audio_bytes = response.content
+                logging.debug(f"Audio bytes (first 100 bytes): {audio_bytes[:100]}")
+                logging.debug(f"Total audio bytes length: {len(audio_bytes)}")
 
-            await websocket.send_bytes(audio_bytes)
+                await websocket.send_bytes(audio_bytes)
+
+                # Calculate the duration of the audio using audio length and bitrate
+                audio_duration = len(audio_bytes) / 16000  # Assuming 16000 bytes/sec
+                await asyncio.sleep(audio_duration)  # Wait the length of the audio + 2 seconds
 
     except WebSocketDisconnect:
         logging.info("Client disconnected")
