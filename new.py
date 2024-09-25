@@ -44,7 +44,9 @@ CHUNK_SIZE = 1024
 # Function to remove special characters and control characters like newlines
 def filter_response(text):
     text = re.sub(r'[\x00-\x1F]+', ' ', text)  # Remove control characters
-    return text
+    text = re.sub(r'\[\d+\]', '', text)  # Remove patterns like [1], [2], [3]
+    text = re.sub(r' +', ' ', text)  # Remove extra spaces
+    return text.strip()
 
 def chunk_response(text, max_length=100):
     # Split text into sentences
